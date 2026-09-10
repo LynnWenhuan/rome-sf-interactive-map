@@ -1,0 +1,24 @@
+# RESOURCE MANIFEST — Corrected build
+
+- `DATA-AUDIT.md`
+- `README.md`
+- `RESOURCE-MANIFEST.md`
+- `STYLE-LAB.md`
+- `app.js`
+- `assets/rome-bounds.png`
+- `assets/rome-regions-cropped.png`
+- `assets/rome-regions.png`
+- `assets/sf-a.png`
+- `assets/sf-all.png`
+- `assets/sf-b.png`
+- `assets/sf-c.png`
+- `assets/sf-d.png`
+- `assets/sf-holc-composite.png`
+- `data/README.md`
+- `data/rome-region-labels.geojson`
+- `data/rome-regions.geojson`
+- `data/rome-regions.js`
+- `index.html`
+- `start-server.bat`
+- `start-server.sh`
+- `styles.css`
