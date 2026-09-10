@@ -1587,3 +1587,25 @@ body[data-visual-style="night"] .rank-fill { background: linear-gradient(90deg,#
 .sf-footprint-row .rank-fill[style*="#4d78c4"] { background: #4d78c4 !important; }
 .sf-footprint-row .rank-fill[style*="#d3ab2f"] { background: #d3ab2f !important; }
 .sf-footprint-row .rank-fill[style*="#cc5a55"] { background: #cc5a55 !important; }
+
+
+/* MAP-RESTORED: the actual map remains visually primary */
+.map-surface {
+  background:
+    linear-gradient(rgba(255,255,255,.18), rgba(255,255,255,.18)),
+    #e8e7e2;
+}
+body[data-visual-style="night"] .map-surface,
+body.dark .map-surface {
+  background: #162028;
+}
+.map-status::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  vertical-align: 1px;
+}

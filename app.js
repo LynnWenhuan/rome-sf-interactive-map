@@ -4,13 +4,43 @@
 
   const MAP_STYLE = {
     version: 8,
-    name: "Local research canvas",
-    sources: {},
-    layers: [{ id: "background", type: "background", paint: { "background-color": "#e8e7e2" } }]
+    name: "Research basemap",
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "© OpenStreetMap contributors"
+      }
+    },
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": "#e8e7e2" } },
+      {
+        id: "osm-basemap",
+        type: "raster",
+        source: "osm",
+        minzoom: 0,
+        maxzoom: 19,
+        paint: { "raster-opacity": 0.82, "raster-saturation": -0.22, "raster-contrast": -0.04 }
+      }
+    ]
   };
   const HOLC_PMTILES = "pmtiles://https://s3-west.nrp-nautilus.io/public-mappinginequality/mappinginequality.pmtiles";
   const ROME_BOUNDS = [[12.460, 41.870], [12.520, 41.915]];
   const SF_BOUNDS = [[-122.53, 37.70], [-122.35, 37.83]];
+  const SF_PAPER_BOUNDS = [
+    [-122.515, 37.812],
+    [-122.357, 37.812],
+    [-122.357, 37.708],
+    [-122.515, 37.708]
+  ];
+  const SF_PAPER_OVERLAYS = {
+    ALL: "assets/sf-holc-overlay-all.png",
+    A: "assets/sf-holc-overlay-a.png",
+    B: "assets/sf-holc-overlay-b.png",
+    C: "assets/sf-holc-overlay-c.png",
+    D: "assets/sf-holc-overlay-d.png"
+  };
   const COLORS = { A: "#4f9d5d", B: "#4d78c4", C: "#d3ab2f", D: "#cc5a55" };
 
   const state = {
@@ -302,9 +332,51 @@
     map.setFilter("rome-outline", filter);
   }
 
+  function removeSfPaperOverlay(map) {
+    if (!map) return;
+    if (map.getLayer("sf-paper-overlay")) map.removeLayer("sf-paper-overlay");
+    if (map.getSource("sf-paper-overlay")) map.removeSource("sf-paper-overlay");
+  }
+
+  function addSfPaperOverlay(map, grade = "ALL", opacity = 0.72) {
+    if (!map) return;
+    removeSfPaperOverlay(map);
+    const url = SF_PAPER_OVERLAYS[grade] || SF_PAPER_OVERLAYS.ALL;
+    map.addSource("sf-paper-overlay", {
+      type: "image",
+      url,
+      coordinates: SF_PAPER_BOUNDS
+    });
+    map.addLayer({
+      id: "sf-paper-overlay",
+      type: "raster",
+      source: "sf-paper-overlay",
+      paint: {
+        "raster-opacity": opacity,
+        "raster-fade-duration": 0
+      }
+    });
+  }
+
+  function setSfPaperOverlayOpacity(map, opacity) {
+    if (map?.getLayer("sf-paper-overlay")) {
+      map.setPaintProperty("sf-paper-overlay", "raster-opacity", opacity);
+    }
+  }
+
   function addSfLayers(map, { interactive = true, grade = "ALL" } = {}) {
     if (!map) return;
-    registerPmtiles();
+
+    // Always keep San Francisco visible as an interactive MAP. A locally
+    // bundled paper overlay is added first, then exact vectors upgrade it
+    // when the Mapping Inequality PMTiles source is reachable.
+    addSfPaperOverlay(map, grade, 0.74);
+
+    if (!registerPmtiles()) {
+      $("#mapStatus").textContent =
+        "Interactive basemap active · using the local San Francisco paper overlay because the PMTiles library is unavailable.";
+      return;
+    }
 
     map.addSource("holc", {
       type: "vector",
@@ -421,6 +493,10 @@
     ["sf-holc-fill", "sf-holc-line"].forEach(id => {
       if (map.getLayer(id)) map.setFilter(id, filter);
     });
+    const vectorActive = Boolean(map.getLayer("sf-holc-fill"));
+    if (map.getSource("sf-paper-overlay")) {
+      addSfPaperOverlay(map, grade, vectorActive ? 0.08 : 0.74);
+    }
     clearSfHover(map);
   }
 
@@ -604,7 +680,7 @@
       $("#mapTitle").textContent = "San Francisco · 1937";
       $("#mapSubtitle").textContent = "Live Mapping Inequality HOLC polygons";
       $("#sourceIntegrityText").textContent =
-        "San Francisco polygons and A/B/C/D grades are streamed from Mapping Inequality's vector dataset. No Rome scoring or interpretive lens is applied.";
+        "San Francisco uses Mapping Inequality vector polygons when reachable. A locally bundled paper overlay remains available inside the interactive map as a resilient data-layer fallback. No Rome scoring or interpretive lens is applied.";
       renderEmptyDetail("sf");
       $("#mapStatus").textContent = "Hover and click a San Francisco HOLC polygon.";
     }
@@ -619,59 +695,67 @@
     updateFallbackContent(state.city);
     hideMapFallback();
 
+    // A static figure is used only if the mapping engine itself cannot start.
+    // Network/data-layer failures never replace the map.
     if (!isMapAvailable()) {
       showMapFallback(state.city);
       $("#mapStatus").textContent = state.city === "rome"
-        ? "GIS library unavailable · showing the Rome paper figure."
-        : "GIS library unavailable · showing the San Francisco paper map.";
+        ? "Map engine unavailable · showing the Rome paper figure."
+        : "Map engine unavailable · showing the San Francisco paper figure.";
       return;
     }
 
     const isRome = state.city === "rome";
-    let baseLoaded = false;
     let sfDataLoaded = false;
     exploreMap = createMap("exploreMap", isRome ? ROME_BOUNDS : SF_BOUNDS);
+
     if (!exploreMap) {
       showMapFallback(state.city);
       return;
     }
 
-    const loadTimer = window.setTimeout(() => {
-      if (!baseLoaded || (!isRome && !sfDataLoaded)) {
-        showMapFallback(isRome ? "rome" : "sf");
-        $("#mapStatus").textContent = isRome
-          ? "GIS initialization timed out · showing the Rome paper figure."
-          : "San Francisco vector data timed out · showing the paper map.";
-      }
-    }, isRome ? 5000 : 9000);
-
     exploreMap.on("load", () => {
-      baseLoaded = true;
+      hideMapFallback();
+
       if (isRome) {
         addRomeLayers(exploreMap, { interactive: true, scoreMode: state.score });
         selectRomeRegion(state.selectedRegion, false);
-        hideMapFallback();
-        window.clearTimeout(loadTimer);
+        $("#mapStatus").textContent =
+          "Interactive geographic basemap · local Rome polygons and paper-derived scores.";
       } else {
         addSfLayers(exploreMap, { interactive: true, grade: state.sfGrade });
-        // The base canvas is ready; keep it visible while the HOLC source loads.
-        hideMapFallback();
+        $("#mapStatus").textContent =
+          "Interactive geographic basemap · loading exact San Francisco HOLC vectors; local paper overlay remains visible.";
       }
     });
 
     exploreMap.on("sourcedata", evt => {
-      if (!isRome && evt.sourceId === "holc" && evt.isSourceLoaded) {
+      if (!isRome && evt.sourceId === "holc" && evt.isSourceLoaded && !sfDataLoaded) {
         sfDataLoaded = true;
-        hideMapFallback();
-        window.clearTimeout(loadTimer);
+        setSfPaperOverlayOpacity(exploreMap, 0.08);
         $("#mapStatus").textContent = state.sfGrade === "ALL"
-          ? "Showing all San Francisco HOLC grades."
-          : `Showing San Francisco Grade ${state.sfGrade} polygons.`;
+          ? "Exact Mapping Inequality HOLC polygons loaded on the interactive basemap."
+          : `Exact Mapping Inequality Grade ${state.sfGrade} polygons loaded on the interactive basemap.`;
       }
     });
 
     exploreMap.on("error", evt => {
       const message = evt?.error?.message || "Map layer error";
+
+      if (!isRome && /pmtiles|holc|range|cors/i.test(message)) {
+        setSfPaperOverlayOpacity(exploreMap, 0.74);
+        $("#mapStatus").textContent =
+          "San Francisco vector source is unavailable · keeping the interactive basemap with the local paper overlay.";
+        return;
+      }
+
+      if (/tile|openstreetmap/i.test(message)) {
+        $("#mapStatus").textContent = isRome
+          ? "Basemap tiles are unavailable · Rome GIS polygons remain interactive."
+          : "Basemap tiles are unavailable · San Francisco map data remains visible.";
+        return;
+      }
+
       $("#mapStatus").textContent = `Map warning: ${message}`;
     });
   }
